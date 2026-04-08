@@ -133,4 +133,26 @@ describe("sandbox explain command", () => {
       ]),
     );
   });
+
+  it("prints mounts in text output", async () => {
+    mockCfg = {
+      agents: {
+        defaults: {
+          sandbox: { mode: "all", scope: "agent", workspaceAccess: "none" },
+        },
+      },
+      session: { store: "/tmp/openclaw-test-sessions-{agentId}.json" },
+    };
+
+    const logs: string[] = [];
+    await sandboxExplainCommand({ json: false, session: "agent:main:main" }, {
+      log: (msg: string) => logs.push(msg),
+      error: (msg: string) => logs.push(msg),
+      exit: (_code: number) => {},
+    } as unknown as Parameters<typeof sandboxExplainCommand>[1]);
+
+    const out = logs.join("");
+    expect(out).toContain("Effective mounts:");
+    expect(out).toContain("source:");
+  });
 });
