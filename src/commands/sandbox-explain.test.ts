@@ -155,4 +155,39 @@ describe("sandbox explain command", () => {
     expect(out).toContain("Effective mounts:");
     expect(out).toContain("source:");
   });
+
+  it("uses agent workspace overrides when deriving mounts", async () => {
+    mockCfg = {
+      agents: {
+        defaults: {
+          workspace: "/tmp/default-agent-workspace",
+          sandbox: { mode: "all", scope: "agent", workspaceAccess: "ro" },
+        },
+        list: [
+          {
+            id: "tavern",
+            workspace: "/tmp/override-agent-workspace",
+          },
+        ],
+      },
+      session: { store: "/tmp/openclaw-test-sessions-{agentId}.json" },
+    };
+
+    const logs: string[] = [];
+    await sandboxExplainCommand({ json: true, agent: "tavern" }, {
+      log: (msg: string) => logs.push(msg),
+      error: (msg: string) => logs.push(msg),
+      exit: (_code: number) => {},
+    } as unknown as Parameters<typeof sandboxExplainCommand>[1]);
+
+    const parsed = JSON.parse(logs.join(""));
+    expect(parsed.sandbox.mounts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "agent",
+          hostRoot: expect.stringContaining("override-agent-workspace"),
+        }),
+      ]),
+    );
+  });
 });

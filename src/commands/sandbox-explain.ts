@@ -1,4 +1,4 @@
-import { resolveAgentConfig } from "../agents/agent-scope.js";
+import { resolveAgentConfig, resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import { resolveSandboxConfigForAgent } from "../agents/sandbox.js";
 import { buildSandboxFsMounts } from "../agents/sandbox/fs-paths.js";
 import { resolveSandboxScopeKey, resolveSandboxWorkspaceDir } from "../agents/sandbox/shared.js";
@@ -184,7 +184,9 @@ export async function sandboxExplainCommand(
       sandboxCfg.scope === "shared"
         ? resolvedWorkspaceRoot
         : resolveSandboxWorkspaceDir(resolvedWorkspaceRoot, scopeKey);
-    const agentWorkspaceDir = resolveUserPath(DEFAULT_AGENT_WORKSPACE_DIR);
+    const agentWorkspaceDir =
+      resolveAgentWorkspaceDir(cfg, resolvedAgentId) ||
+      resolveUserPath(DEFAULT_AGENT_WORKSPACE_DIR);
     const workspaceDir =
       sandboxCfg.workspaceAccess === "rw" ? agentWorkspaceDir : sandboxWorkspaceDir;
     const sandboxLikeContext = {
