@@ -20,8 +20,6 @@ import {
   loadSessionEntry,
   migrateAndPruneGatewaySessionStoreKey,
   normalizeChannelId,
-  updatePairedDeviceMetadata,
-  updatePairedNodeMetadata,
   normalizeMainKey,
   normalizeRpcAttachmentsToChatAttachments,
   parseMessageWithAttachments,
@@ -265,12 +263,7 @@ async function sendReceiptAck(params: {
   });
 }
 
-export const handleNodeEvent = async (
-  ctx: NodeEventContext,
-  nodeId: string,
-  evt: NodeEvent,
-  opts?: { nodePairingIds?: readonly string[] },
-) => {
+export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt: NodeEvent) => {
   switch (evt.event) {
     case "voice.transcript": {
       const obj = parsePayloadObject(evt.payloadJSON);
@@ -602,14 +595,14 @@ export const handleNodeEvent = async (
       }
 
       const runId = normalizeOptionalString(obj.runId) ?? "";
-      const command = normalizeOptionalString(obj.command) ?? "";
+      const command = sanitizeInboundSystemTags(normalizeOptionalString(obj.command) ?? "");
       const exitCode =
         typeof obj.exitCode === "number" && Number.isFinite(obj.exitCode)
           ? obj.exitCode
           : undefined;
       const timedOut = obj.timedOut === true;
-      const output = normalizeOptionalString(obj.output) ?? "";
-      const reason = normalizeOptionalString(obj.reason) ?? "";
+      const output = sanitizeInboundSystemTags(normalizeOptionalString(obj.output) ?? "");
+      const reason = sanitizeInboundSystemTags(normalizeOptionalString(obj.reason) ?? "");
 
       let text = "";
       if (evt.event === "exec.started") {
@@ -635,7 +628,11 @@ export const handleNodeEvent = async (
         }
       }
 
-      enqueueSystemEvent(text, { sessionKey, contextKey: runId ? `exec:${runId}` : "exec" });
+      enqueueSystemEvent(text, {
+        sessionKey,
+        contextKey: runId ? `exec:${runId}` : "exec",
+        trusted: false,
+      });
       // Scope wakes only for canonical agent sessions. Synthetic node-* fallback
       // keys should keep legacy unscoped behavior so enabled non-main heartbeat
       // agents still run when no explicit agent session is provided.
@@ -682,35 +679,6 @@ export const handleNodeEvent = async (
         }
       } catch (err) {
         ctx.logGateway.warn(`push apns register failed node=${nodeId}: ${formatForLog(err)}`);
-      }
-      return;
-    }
-    case "node.presence.alive": {
-      const obj = parsePayloadObject(evt.payloadJSON);
-      if (!obj) {
-        return;
-      }
-      const trigger = normalizeOptionalString(obj.trigger) ?? "background";
-      const receivedAtMs = Date.now();
-      const nodePairingIds = new Set<string>(
-        opts?.nodePairingIds?.length ? opts.nodePairingIds : [nodeId],
-      );
-      try {
-        await Promise.all([
-          ...[...nodePairingIds].map(
-            async (pairedNodeId) =>
-              await updatePairedNodeMetadata(pairedNodeId, {
-                lastSeenAtMs: receivedAtMs,
-                lastSeenReason: trigger,
-              }),
-          ),
-          updatePairedDeviceMetadata(nodeId, {
-            lastSeenAtMs: receivedAtMs,
-            lastSeenReason: trigger,
-          }),
-        ]);
-      } catch (err) {
-        ctx.logGateway.warn(`node presence alive failed node=${nodeId}: ${formatForLog(err)}`);
       }
       return;
     }

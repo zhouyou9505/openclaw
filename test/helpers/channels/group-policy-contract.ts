@@ -1,5 +1,5 @@
-export { resolveWhatsAppRuntimeGroupPolicy } from "../../../extensions/whatsapp/test-api.js";
+export { resolveWhatsAppRuntimeGroupPolicy } from "../../../extensions/whatsapp/src/runtime-group-policy.js";
 export {
   evaluateZaloGroupAccess,
   resolveZaloRuntimeGroupPolicy,
-} from "../../../extensions/zalo/test-api.js";
+} from "../../../extensions/zalo/src/group-access.js";

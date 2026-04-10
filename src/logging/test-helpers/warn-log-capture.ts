@@ -1,6 +1,5 @@
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { resolvePreferredOpenClawTmpDir } from "../../infra/tmp-openclaw-dir.js";
 import {
   registerLogTransport,
   resetLogger,
@@ -8,14 +7,12 @@ import {
   type LogTransportRecord,
 } from "../logger.js";
 
-export function createWarnLogCapture(_prefix: string) {
+export function createWarnLogCapture(prefix: string) {
   const records: LogTransportRecord[] = [];
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-warn-capture-"));
-  const tmpFile = path.join(tmpDir, "warn.log");
   setLoggerOverride({
     level: "warn",
     consoleLevel: "silent",
-    file: tmpFile,
+    file: path.join(resolvePreferredOpenClawTmpDir(), `${prefix}-${process.pid}-${Date.now()}.log`),
   });
   const unregister = registerLogTransport((record) => {
     records.push(record);
@@ -31,7 +28,6 @@ export function createWarnLogCapture(_prefix: string) {
       unregister();
       setLoggerOverride(null);
       resetLogger();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
     },
   };
 }
