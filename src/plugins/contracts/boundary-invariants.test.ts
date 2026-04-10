@@ -1,10 +1,48 @@
 import { readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const SRC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const REPO_ROOT = resolve(SRC_ROOT, "..");
+
+function normalizeRelPath(value: string): string {
+  return value.replaceAll("\\", "/");
+}
+
+function walkFiles(params: { rootDir: string; relativeDir: string }): string[] {
+  const baseDir = resolve(params.rootDir, params.relativeDir);
+  const results: string[] = [];
+  const stack: string[] = [baseDir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    const entries = readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const next = resolve(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(next);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      const rel = normalizeRelPath(resolve(next).slice(params.rootDir.length + 1));
+      results.push(rel);
+    }
+  }
+  return results.toSorted();
+}
+
+function listSourceFiles(params: {
+  rootDir: string;
+  include: (relPath: string) => boolean;
+}): string[] {
+  return walkFiles({ rootDir: params.rootDir, relativeDir: "src" }).filter(params.include);
+}
 
 const ALLOWED_BUNDLED_CAPABILITY_METADATA_CONSUMERS = new Set([
   "src/media-generation/provider-capabilities.contract.test.ts",
@@ -35,10 +73,9 @@ const ALLOWED_CHANNEL_BUNDLED_METADATA_CONSUMERS = new Set([
 
 describe("plugin contract boundary invariants", () => {
   it("keeps bundled-capability-metadata confined to contract/test inventory", async () => {
-    const { globSync } = await import("glob");
-    const files = globSync("src/**/*.ts", {
-      cwd: REPO_ROOT,
-      nodir: true,
+    const files = listSourceFiles({
+      rootDir: REPO_ROOT,
+      include: (file) => file.startsWith("src/") && file.endsWith(".ts"),
     });
     const offenders = files.filter((file) => {
       if (ALLOWED_BUNDLED_CAPABILITY_METADATA_CONSUMERS.has(file)) {
@@ -51,11 +88,10 @@ describe("plugin contract boundary invariants", () => {
   });
 
   it("keeps the bundled contract inventory out of non-test runtime code", async () => {
-    const { globSync } = await import("glob");
-    const files = globSync("src/**/*.ts", {
-      cwd: REPO_ROOT,
-      nodir: true,
-      ignore: ["src/**/*.test.ts"],
+    const files = listSourceFiles({
+      rootDir: REPO_ROOT,
+      include: (file) =>
+        file.startsWith("src/") && file.endsWith(".ts") && !file.endsWith(".test.ts"),
     });
     const offenders = files.filter((file) => {
       const source = readFileSync(resolve(REPO_ROOT, file), "utf8");
@@ -65,10 +101,9 @@ describe("plugin contract boundary invariants", () => {
   });
 
   it("keeps core tests off bundled extension deep imports", async () => {
-    const { globSync } = await import("glob");
-    const files = globSync("src/**/*.test.ts", {
-      cwd: REPO_ROOT,
-      nodir: true,
+    const files = listSourceFiles({
+      rootDir: REPO_ROOT,
+      include: (file) => file.startsWith("src/") && file.endsWith(".test.ts"),
     });
     const offenders = files.filter((file) => {
       if (ALLOWED_EXTENSION_PATH_STRING_TESTS.has(file)) {
@@ -85,10 +120,9 @@ describe("plugin contract boundary invariants", () => {
   });
 
   it("keeps plugin contract tests off bundled path helpers unless the test is explicitly about paths", async () => {
-    const { globSync } = await import("glob");
-    const files = globSync("src/plugins/contracts/**/*.test.ts", {
-      cwd: REPO_ROOT,
-      nodir: true,
+    const files = listSourceFiles({
+      rootDir: REPO_ROOT,
+      include: (file) => file.startsWith("src/plugins/contracts/") && file.endsWith(".test.ts"),
     });
     const offenders = files.filter((file) => {
       if (ALLOWED_CONTRACT_BUNDLED_PATH_HELPERS.has(file)) {
@@ -101,11 +135,10 @@ describe("plugin contract boundary invariants", () => {
   });
 
   it("keeps channel production code off bundled-plugin-metadata helpers", async () => {
-    const { globSync } = await import("glob");
-    const files = globSync("src/channels/**/*.ts", {
-      cwd: REPO_ROOT,
-      nodir: true,
-      ignore: ["src/channels/**/*.test.ts"],
+    const files = listSourceFiles({
+      rootDir: REPO_ROOT,
+      include: (file) =>
+        file.startsWith("src/channels/") && file.endsWith(".ts") && !file.endsWith(".test.ts"),
     });
     const offenders = files.filter((file) => {
       if (ALLOWED_CHANNEL_BUNDLED_METADATA_CONSUMERS.has(file)) {
@@ -118,11 +151,12 @@ describe("plugin contract boundary invariants", () => {
   });
 
   it("keeps contract loaders off hand-built bundled extension paths", async () => {
-    const { globSync } = await import("glob");
-    const files = globSync("src/{plugins,channels}/**/*.ts", {
-      cwd: REPO_ROOT,
-      nodir: true,
-      ignore: ["src/**/*.test.ts"],
+    const files = listSourceFiles({
+      rootDir: REPO_ROOT,
+      include: (file) =>
+        (file.startsWith("src/plugins/") || file.startsWith("src/channels/")) &&
+        file.endsWith(".ts") &&
+        !file.endsWith(".test.ts"),
     });
     const offenders = files.filter((file) => {
       const source = readFileSync(resolve(REPO_ROOT, file), "utf8");
